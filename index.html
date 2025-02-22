@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ティッシュ字検定ゲームby制作者レジェンド</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Hiragino Mincho Pro', 'Yu Mincho', 'MS Mincho', serif;
+      text-align: center;
+      background-color: #f0f0f0;
+      color: #000;
+    }
+    #game-container {
+      position: relative;
+      width: 100%;
+      max-width: 400px;
+      margin: 0 auto;
+      background-color: #fff;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    /* タイトル見出し */
+    #game-container h1 {
+      margin: 10px 0;
+      font-size: 22px;
+    }
+    /* 難易度選択エリア */
+    #difficultyContainer {
+      padding: 10px 0;
+    }
+    #startButton {
+      margin-left: 10px;
+      padding: 5px 10px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    .speech-bubble {
+      position: relative;
+      margin: 10px auto;
+      padding: 10px 15px;
+      max-width: 90%;
+      background: #fff;
+      border: 2px solid #ccc;
+      border-radius: 10px;
+      font-size: 18px;
+      font-weight: bold;
+      color: #000;
+      text-shadow: 2px 2px 2px rgba(0,0,0,0.2);
+      z-index: 10;
+    }
+    /* 女の子のイラスト画像: 元の大きさで表示 */
+    #illustration {
+      display: block;
+      margin: 10px auto;
+      border: none;
+      z-index: 5;
+    }
+    #drawingCanvas {
+      display: block;
+      width: 400px;
+      height: 300px;
+      background-color: #ffffff;
+      border: 1px solid #ccc;
+      margin: 0 auto;
+      /* タッチ操作でのスクロール等を防ぎたい場合は下記を有効化
+         （ただし、端末でのピンチズームやスクロールも無効になる場合がある）
+      */
+      /* touch-action: none; */
+    }
+    /* 各種ステータス表示（#pressure は内部処理用のため CSS で非表示） */
+    #timer, #ink, #score, #totalScore {
+      margin: 10px 0;
+      font-size: 18px;
+      font-weight: bold;
+      color: #000;
+      text-shadow: 1px 1px 1px rgba(0,0,0,0.2);
+    }
+    #pressure {
+      display: none; /* 実際には表示しない */
+    }
+    /* 獲得ティッシュアイコン表示用 */
+    #tissueContainer {
+      margin: 10px auto;
+      padding: 5px;
+      min-height: 24px;
+    }
+    button {
+      display: block;
+      margin: 10px auto;
+      padding: 10px 20px;
+      font-size: 18px;
+      color: #fff;
+      background-color: #007BFF;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    }
+    button:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <!-- タイトル見出し -->
+    <h1>ティッシュ字検定ゲームby制作者レジェンド</h1>
+    <!-- 難易度選択エリア -->
+    <div id="difficultyContainer">
+      <label for="difficultySelect">難易度を選択してください: </label>
+      <select id="difficultySelect">
+        <option value="easy">簡単 (インクがゆっくり減る)</option>
+        <option value="normal" selected>普通</option>
+        <option value="hard">難しい (インクが早く減る)</option>
+      </select>
+      <button id="startButton">スタート</button>
+    </div>
+    <!-- お題表示 -->
+    <div class="speech-bubble" id="speechBubble">「ここにお題が表示されます！」</div>
+    <!-- 女の子のイラスト -->
+    <img id="illustration" src="josi.png" alt="Illustration">
+    <!-- 描画キャンバス -->
+    <canvas id="drawingCanvas" width="400" height="300"></canvas>
+    <!-- 各種ステータス表示 -->
+    <div id="timer">残り時間: 90秒</div>
+    <div id="ink">インク残量: 100.0</div>
+    <div id="pressure">筆圧: 0.0</div>
+    <div id="score">今回の点数: 0点</div>
+    <div id="totalScore">累積点数: 0点</div>
+    <!-- 獲得ティッシュアイコン表示用 -->
+    <div id="tissueContainer"></div>
+    <!-- 次のお題、リスタートボタン -->
+    <button id="nextProblemButton" style="display: none;">次のお題へ</button>
+    <button id="restartButton" style="display: none;">リスタート</button>
+  </div>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", function() {
+      console.log("DOM fully loaded and parsed.");
+
+      // DOM要素の取得
+      const drawingCanvas = document.getElementById('drawingCanvas');
+      const drawingCtx = drawingCanvas.getContext('2d');
+      const speechBubble = document.getElementById('speechBubble');
+      const timerElement = document.getElementById('timer');
+      const inkElement = document.getElementById('ink');
+      const pressureElement = document.getElementById('pressure');
+      const scoreElement = document.getElementById('score');
+      const totalScoreElement = document.getElementById('totalScore');
+      const tissueContainer = document.getElementById('tissueContainer');
+      const nextProblemButton = document.getElementById('nextProblemButton');
+      const restartButton = document.getElementById('restartButton');
+      const difficultySelect = document.getElementById('difficultySelect');
+      const startButton = document.getElementById('startButton');
+
+      // ゲームの状態変数
+      let remainingTime = 90;
+      let ink = 100;
+      let pressure = 0;
+      let isDrawing = false;
+      let isGameStarted = false;
+      let currentProblemIndex = 0;
+      let currentScore = 0;
+      let totalScore = 0;
+      let lastX = 0;
+      let lastY = 0;
+
+      // setInterval の ID を管理する変数
+      let timerId = null;
+      let pressureIntervalId = null;
+
+      // お題リスト（漢字のお題、偉人の名言、動物のお題）フルバージョン
+      const kanjiProblems = [
+        // 漢字のお題
+        "泣","業","目","殺","運","央","王","立","均","法",
+        "依","卒","球","延","養","救","口","円","月","検",
+        "菜","沿","具","境","九","航","標","素","福","上",
+        "青","給","変","周","寒","選","夕","典","土","速",
+        "担","参","令","歴","向","信","河","十","成","積",
+        "千","格","生","女","感","村","誕","来","城","潔",
+        "辞","飯","貧","案","苦","温","犬","昭","起","折",
+        "博","告","耳","浴","言","愛","潮","下","日","漁",
+        "基","田","群","過","中","友","草","順","費","金",
+        "初","幹","林","橋","波","臣","種","続","車","文",
+        "節","刊","竹","君","仮","衣","空","暖","子","季",
+        "連","小","禁","機","句","牧","段","水","幸","験",
+        "飛","虫","試","席","勇","議","百","湖","貝","存",
+        "白","険","農","建","仕","名","八","古","石","係",
+        "足","要","減","火","開","恩","校","音","清","期",
+        "気","軽","玉","松","研","辺","化","年","医","局",
+        "去","富","銀","満","木","紀","育","階","森","手",
+        "献","見","大","産","健","区","閉","人","客","出",
+        "決","限","論","然","造","冷","差","界","球","花",
+        "現","曲","昨","快","焼","右","囲","末","築","三",
+        "感","約","山","童","先","本","駅","堂","休","浅",
+        "的","祝","雨","岸","早","慣","字","録","元","泳",
+        "宅","額","内","観","飲","員","物","残","価","経",
+        "任","正","違","宇","類","暗","労","宮","探","必",
+        "察","総","館","梅","学","無","監","便","急","票",
+        "映","求","燃","師","町","平","札","天","復","糸",
+        "韓","四","川","左","児","七","二","未","悪","散",
+        "漢","旗","尊","借","希","敗","並","宮","荷","入",
+        "五","照","望","一","戦","男","包","挙","血","験",
+        "庫","級","赤","祖","武","失","六","輪","説","横",
+        // 偉人の名言
+        "努力すれば、必ず結果はついてくる。",
+        "成功とは、失敗に失敗を重ねても熱意を失わないことだ。",
+        "他人を変えようと思うなら、まず自分を変えなさい。",
+        "私たちの最大の弱点は、諦めることにある。",
+        "幸福とは、考え方の問題である。",
+        "たとえ明日世界が滅びようとも、私は今日リンゴの木を植える。",
+        "失敗とは、再挑戦する勇気を持たなくなることである。",
+        "最善を尽くせ。状況が悪化する前に。",
+        "成長とは、快適な場所を離れることから始まる。",
+        "人の価値は、行動によって決まる。",
+        "未来を予測する最良の方法は、それを創ることである。",
+        "どんな困難も、乗り越えるべきチャンスだ。",
+        "恐れるな、行動せよ。",
+        "道を見つけるか、道を作るか。",
+        "限界を設けるのは、自分の心だ。",
+        "知識は力なり。",
+        "変化を恐れるな。それは進歩の第一歩だ。",
+        "真のリーダーシップは、率先垂範にある。",
+        "あなたの人生は、あなたの選択の結果である。",
+        "常に前進せよ。止まることは後退だ。",
+        "知識を得ることで、恐怖を克服できる。",
+        "人生は短い。だからこそ、大胆に生きなければならない。",
+        "心の中で信じられることは、実現可能だ。",
+        "自分を愛せない人間が、他人を愛することはできない。",
+        "平和を欲する者は、まず自らを統治せよ。",
+        "成功とは、あきらめない人が得られるご褒美だ。",
+        "何事もやってみなければわからない。",
+        "夢を見るだけではなく、行動せよ。",
+        "本当に重要なのは、失った後に何を得るかだ。",
+        "自分の人生の主人公は自分だ。",
+        // 動物のお題
+        "猫のイラスト","犬のイラスト","熊のイラスト","フクロウのイラスト","イルカのイラスト",
+        "子犬と子猫のイラスト","キツネのイラスト","白鳥のイラスト","狼のイラスト","ウサギのイラスト",
+        "蝶のイラスト","リスのイラスト","ライオンのイラスト","カバのイラスト","ワシのイラスト",
+        "ゾウのイラスト","ラクダのイラスト","カメのイラスト","ナマケモノのイラスト","カエルのイラスト",
+        "カニのイラスト","コウモリのイラスト","カワウソのイラスト","チーターのイラスト","パンダの親子のイラスト",
+        "サルのイラスト","カマキリのイラスト","ホタルのイラスト","トカゲのイラスト","アザラシイラスト",
+        "カモのイラスト","ヤギのイラスト","ヒヨコのイラスト","ハチのイラスト","クラゲのイラスト",
+        "クモのイラスト","スズメのイラスト","コイのイラスト","シカのイラスト","シロクマのイラスト",
+        "フラミンゴのイラスト","ツルのイラスト","ペンギンのイラスト","タヌキのイラスト","ヤドカリのイラスト",
+        "タコのイラスト","ヘビのイラスト","鯉のイラスト","ツバメのイラスト","ペガサス（架空の動物）のイラスト"
+      ];
+
+      // 配列をシャッフルする関数（Fisher–Yates アルゴリズム）
+      function shuffleArray(array) {
+        for (let i = array.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [array[i], array[j]] = [array[j], array[i]];
+        }
+        return array;
+      }
+
+      // キャンバス背景色を筆圧に応じて変更する
+      // 例として6段階
+      function updateCanvasColor() {
+        if (pressure < 20) {
+          drawingCanvas.style.backgroundColor = "#ffffff";
+        } else if (pressure < 40) {
+          drawingCanvas.style.backgroundColor = "#fff0f0";
+        } else if (pressure < 60) {
+          drawingCanvas.style.backgroundColor = "#ffe0e0";
+        } else if (pressure < 80) {
+          drawingCanvas.style.backgroundColor = "#ffcccc";
+        } else if (pressure < 90) {
+          drawingCanvas.style.backgroundColor = "#ff9999";
+        } else {
+          drawingCanvas.style.backgroundColor = "#ff6666";
+        }
+      }
+
+      // UI更新処理
+      function updateUI() {
+        timerElement.textContent = `残り時間: ${remainingTime}秒`;
+        inkElement.textContent = `インク残量: ${ink.toFixed(1)}`;
+        scoreElement.textContent = `今回の点数: ${currentScore}点`;
+        totalScoreElement.textContent = `累積点数: ${totalScore}点`;
+        updateTissueIcons();
+        updateCanvasColor();
+      }
+
+      // 獲得ティッシュアイコン更新（累積点数50点ごとに1つ表示）
+      const pointsPerTissue = 50;
+      function updateTissueIcons() {
+        const tissueCount = Math.floor(totalScore / pointsPerTissue);
+        let html = "";
+        for (let i = 0; i < tissueCount; i++) {
+          html += '<img src="tissue.png" alt="Tissue" style="width:20px; margin:2px;">';
+        }
+        tissueContainer.innerHTML = html;
+      }
+
+      // タイマー開始処理
+      function startTimer() {
+        timerId = setInterval(() => {
+          if (remainingTime > 0) {
+            remainingTime--;
+            updateUI();
+          } else {
+            clearInterval(timerId);
+            gameOver("時間切れ！");
+          }
+        }, 1000);
+        console.log("Timer started.");
+      }
+
+      // お題表示＆キャンバスクリア処理
+      function showNextProblem() {
+        console.log("showNextProblem called. currentProblemIndex =", currentProblemIndex);
+        if (currentProblemIndex < kanjiProblems.length) {
+          speechBubble.textContent = `「${kanjiProblems[currentProblemIndex]}」を書いてください！`;
+          currentProblemIndex++;
+          clearCanvas();
+          totalScore += currentScore;
+          currentScore = 0;
+          updateUI();
+        } else {
+          gameOver("全てのお題が終了しました！");
+        }
+      }
+
+      // ゲームオーバー処理
+      function gameOver(message) {
+        if (!isGameStarted) return;
+        isGameStarted = false;
+        clearInterval(timerId);
+        clearInterval(pressureIntervalId);
+        speechBubble.textContent = `ゲームオーバー: ${message}`;
+        nextProblemButton.style.display = "none";
+        restartButton.style.display = "inline-block";
+        console.log("Game over:", message);
+      }
+
+      // キャンバスクリア
+      function clearCanvas() {
+        drawingCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
+      }
+
+      // --- ① マウスイベント ---
+      drawingCanvas.addEventListener("mousedown", (e) => {
+        if (!isGameStarted) return;
+        isDrawing = true;
+        lastX = e.offsetX;
+        lastY = e.offsetY;
+      });
+
+      drawingCanvas.addEventListener("mousemove", (e) => {
+        if (!isDrawing || !isGameStarted) return;
+        draw(e.offsetX, e.offsetY);
+      });
+
+      drawingCanvas.addEventListener("mouseup", () => {
+        isDrawing = false;
+      });
+
+      drawingCanvas.addEventListener("mouseleave", () => {
+        isDrawing = false;
+      });
+
+      // --- ② タッチイベント ---
+      drawingCanvas.addEventListener("touchstart", (e) => {
+        if (!isGameStarted) return;
+        e.preventDefault();
+        isDrawing = true;
+
+        const touch = e.touches[0];
+        const rect = drawingCanvas.getBoundingClientRect();
+        lastX = touch.clientX - rect.left;
+        lastY = touch.clientY - rect.top;
+      });
+
+      drawingCanvas.addEventListener("touchmove", (e) => {
+        if (!isDrawing || !isGameStarted) return;
+        e.preventDefault();
+
+        const touch = e.touches[0];
+        const rect = drawingCanvas.getBoundingClientRect();
+        const x = touch.clientX - rect.left;
+        const y = touch.clientY - rect.top;
+
+        draw(x, y);
+      });
+
+      drawingCanvas.addEventListener("touchend", (e) => {
+        e.preventDefault();
+        isDrawing = false;
+      });
+
+      drawingCanvas.addEventListener("touchcancel", (e) => {
+        e.preventDefault();
+        isDrawing = false;
+      });
+
+      /**
+       * 実際に線を引く処理
+       * マウス・タッチいずれからも呼び出される
+       */
+      function draw(x, y) {
+        drawingCtx.strokeStyle = "#000";
+        drawingCtx.lineWidth = 4;
+        drawingCtx.lineCap = "round";
+        drawingCtx.lineJoin = "round";
+
+        drawingCtx.beginPath();
+        drawingCtx.moveTo(lastX, lastY);
+        drawingCtx.lineTo(x, y);
+        drawingCtx.stroke();
+
+        lastX = x;
+        lastY = y;
+
+        // 難易度に応じたインク消費と筆圧増加
+        let inkConsumption = 0.1;
+        let pressureIncrement = 0.5;
+        const diff = difficultySelect.value;
+        if (diff === "easy") {
+          inkConsumption = 0.05;
+          pressureIncrement = 0.1;
+        } else if (diff === "hard") {
+          inkConsumption = 0.2;
+          pressureIncrement = 0.7;
+        }
+
+        ink -= inkConsumption;
+        pressure += pressureIncrement;
+        currentScore += 1;
+
+        if (ink <= 0) {
+          gameOver("インクがなくなりました！");
+          return;
+        }
+        if (pressure >= 100) {
+          gameOver("筆圧が強すぎてティッシュが破れた！");
+          return;
+        }
+        updateUI();
+      }
+
+      // スタートボタン押下
+      startButton.addEventListener("click", () => {
+        console.log("startButton clicked");
+        startGame();
+      });
+
+      // 次のお題ボタン
+      nextProblemButton.addEventListener("click", showNextProblem);
+
+      // リスタートボタン
+      restartButton.addEventListener("click", () => {
+        location.reload();
+      });
+
+      // ゲーム開始処理
+      function startGame() {
+        console.log("startGame() called");
+        isGameStarted = true;
+        remainingTime = 90;
+        ink = 100;
+        pressure = 0;
+        currentScore = 0;
+        currentProblemIndex = 0;
+        totalScore = 0;
+
+        // お題をランダムにシャッフル
+        shuffleArray(kanjiProblems);
+
+        startButton.disabled = true;
+        nextProblemButton.style.display = "inline-block";
+
+        updateUI();
+        startTimer();
+
+        // 筆圧の自動回復処理（100msごとに判定）
+        pressureIntervalId = setInterval(() => {
+          if (!isDrawing && pressure > 0) {
+            pressure = Math.max(0, pressure - 0.5);
+            updateUI();
+          }
+        }, 100);
+
+        // 最初のお題を表示
+        showNextProblem();
+      }
+    });
+  </script>
+</body>
+</html>
